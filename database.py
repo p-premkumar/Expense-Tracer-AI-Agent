@@ -54,6 +54,20 @@ class ExpenseDatabase:
             )
         ''')
         
+        # Budget limits table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS budget_limits (
+                limit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL UNIQUE,
+                daily_limit REAL,
+                weekly_limit REAL,
+                monthly_limit REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            )
+        ''')
+        
         conn.commit()
         conn.close()
     
@@ -144,6 +158,73 @@ class ExpenseDatabase:
             SELECT SUM(amount) as total
             FROM expenses
             WHERE user_id = ? AND date >= datetime('now', 'start of day')
+        '''
+        cursor.execute(query, (user_id,))
+        result = cursor.fetchone()
+        conn.close()
+        
+        return result[0] if result[0] else 0    
+    def set_budget_limit(self, user_id, limit_type, amount):
+        """Set budget limit (daily/weekly/monthly)"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Check if limit exists
+        cursor.execute('SELECT limit_id FROM budget_limits WHERE user_id = ?', (user_id,))
+        exists = cursor.fetchone()
+        
+        if exists:
+            # Update existing limit
+            query = f'UPDATE budget_limits SET {limit_type}_limit = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?'
+            cursor.execute(query, (amount, user_id))
+        else:
+            # Create new limit entry
+            if limit_type == 'daily':
+                cursor.execute('INSERT INTO budget_limits (user_id, daily_limit) VALUES (?, ?)', (user_id, amount))
+            elif limit_type == 'weekly':
+                cursor.execute('INSERT INTO budget_limits (user_id, weekly_limit) VALUES (?, ?)', (user_id, amount))
+            elif limit_type == 'monthly':
+                cursor.execute('INSERT INTO budget_limits (user_id, monthly_limit) VALUES (?, ?)', (user_id, amount))
+        
+        conn.commit()
+        conn.close()
+    
+    def get_budget_limits(self, user_id):
+        """Get user's budget limits"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT daily_limit, weekly_limit, monthly_limit FROM budget_limits WHERE user_id = ?', (user_id,))
+        result = cursor.fetchone()
+        conn.close()
+        
+        return result if result else (None, None, None)
+    
+    def get_total_week(self, user_id):
+        """Get total expenses for current week"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        query = '''
+            SELECT SUM(amount) as total
+            FROM expenses
+            WHERE user_id = ? AND date >= datetime('now', '-7 days')
+        '''
+        cursor.execute(query, (user_id,))
+        result = cursor.fetchone()
+        conn.close()
+        
+        return result[0] if result[0] else 0
+    
+    def get_total_month(self, user_id):
+        """Get total expenses for current month"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        query = '''
+            SELECT SUM(amount) as total
+            FROM expenses
+            WHERE user_id = ? AND date >= datetime('now', '-30 days')
         '''
         cursor.execute(query, (user_id,))
         result = cursor.fetchone()

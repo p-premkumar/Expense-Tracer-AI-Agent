@@ -30,6 +30,15 @@ from bot_commands import (
     export_monthly,
     export_weekly,
     export_today_data,
+    set_daily_limit,
+    set_weekly_limit,
+    set_monthly_limit,
+    check_limits,
+    report_week,
+    report_month,
+    export_csv,
+    export_pdf,
+    export_graph,
 )
 
 # Set up logging
@@ -90,6 +99,51 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
     
     await update.message.reply_text(confirmation, parse_mode='Markdown')
+    
+    # Check budget limits and send warning if needed
+    daily_limit, weekly_limit, monthly_limit = db.get_budget_limits(user.id)
+    
+    if any([daily_limit, weekly_limit, monthly_limit]):
+        today_total = db.get_total_today(user.id)
+        week_total = db.get_total_week(user.id)
+        month_total = db.get_total_month(user.id)
+        
+        warnings = []
+        
+        # Check daily limit
+        if daily_limit:
+            daily_percentage = (today_total / daily_limit) * 100
+            if daily_percentage >= 100:
+                warnings.append(f"🔴 Daily limit EXCEEDED: {CURRENCY}{today_total:.2f} / {CURRENCY}{daily_limit:.2f}")
+            elif daily_percentage >= 90:
+                warnings.append(f"⚠️ Daily limit at 90%: {CURRENCY}{today_total:.2f} / {CURRENCY}{daily_limit:.2f}")
+            elif daily_percentage >= 75:
+                warnings.append(f"⚡ Daily limit at 75%: {CURRENCY}{today_total:.2f} / {CURRENCY}{daily_limit:.2f}")
+        
+        # Check weekly limit
+        if weekly_limit:
+            weekly_percentage = (week_total / weekly_limit) * 100
+            if weekly_percentage >= 100:
+                warnings.append(f"🔴 Weekly limit EXCEEDED: {CURRENCY}{week_total:.2f} / {CURRENCY}{weekly_limit:.2f}")
+            elif weekly_percentage >= 90:
+                warnings.append(f"⚠️ Weekly limit at 90%: {CURRENCY}{week_total:.2f} / {CURRENCY}{weekly_limit:.2f}")
+            elif weekly_percentage >= 75:
+                warnings.append(f"⚡ Weekly limit at 75%: {CURRENCY}{week_total:.2f} / {CURRENCY}{weekly_limit:.2f}")
+        
+        # Check monthly limit
+        if monthly_limit:
+            monthly_percentage = (month_total / monthly_limit) * 100
+            if monthly_percentage >= 100:
+                warnings.append(f"🔴 Monthly limit EXCEEDED: {CURRENCY}{month_total:.2f} / {CURRENCY}{monthly_limit:.2f}")
+            elif monthly_percentage >= 90:
+                warnings.append(f"⚠️ Monthly limit at 90%: {CURRENCY}{month_total:.2f} / {CURRENCY}{monthly_limit:.2f}")
+            elif monthly_percentage >= 75:
+                warnings.append(f"⚡ Monthly limit at 75%: {CURRENCY}{month_total:.2f} / {CURRENCY}{monthly_limit:.2f}")
+        
+        # Send warning if any
+        if warnings:
+            warning_text = "*Budget Alert:*\n" + "\n".join(warnings)
+            await update.message.reply_text(warning_text, parse_mode='Markdown')
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -339,10 +393,25 @@ def main():
     application.add_handler(CommandHandler("list", list_expenses))
     application.add_handler(CommandHandler("delete", delete_expense))
     application.add_handler(CommandHandler("stats", statistics))
+    
+    # Export commands
     application.add_handler(CommandHandler("export", export_all))
     application.add_handler(CommandHandler("export_monthly", export_monthly))
     application.add_handler(CommandHandler("export_weekly", export_weekly))
     application.add_handler(CommandHandler("export_today", export_today_data))
+    application.add_handler(CommandHandler("export_csv", export_csv))
+    application.add_handler(CommandHandler("pdf", export_pdf))
+    application.add_handler(CommandHandler("graph", export_graph))
+    
+    # Budget limit commands
+    application.add_handler(CommandHandler("setdaily", set_daily_limit))
+    application.add_handler(CommandHandler("setweekly", set_weekly_limit))
+    application.add_handler(CommandHandler("setmonthly", set_monthly_limit))
+    application.add_handler(CommandHandler("limits", check_limits))
+    
+    # Report commands
+    application.add_handler(CommandHandler("week", report_week))
+    application.add_handler(CommandHandler("month", report_month))
     
     # Message handlers
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

@@ -42,52 +42,68 @@ Use /help for available commands.
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Help command handler"""
     help_text = f"""
-📋 **Available Commands:**
+*EXPENSE TRACKER BOT - COMPLETE GUIDE*
 
+*BASIC COMMANDS:*
 /start - Welcome message
 /help - This help message
-/summary - Show summary of last 30 days
-/weekly - Weekly summary (last 7 days)
-/monthly - Monthly summary (last 30 days)
-/today - Today's total spending
-/categories - Show all categories
-/delete - Delete last expense
-/edit - Edit last expense
+
+*VIEW EXPENSES:*
+/summary - Last 30 days summary
+/weekly - Last 7 days summary
+/month - Last 30 days summary
+/today - Today's total
 /list - Show last 10 expenses
 /stats - Detailed statistics
 
-� **Export to Excel:**
-/export - Export all expenses to Excel
-/export_monthly - Export last 30 days to Excel
-/export_weekly - Export last 7 days to Excel
-/export_today - Export today's expenses to Excel
+*BUDGET MANAGEMENT:*
+/setdaily <amount> - Set daily budget limit
+/setweekly <amount> - Set weekly budget limit  
+/setmonthly <amount> - Set monthly budget limit
+/limits - View current budget status
 
-�📝 **How to Add Expenses:**
-Just send natural language messages like:
+*REPORTS:*
+/week - Weekly report with breakdown
+/month - Monthly report with breakdown
+
+*EXPORT DATA:*
+/export - Excel export (all expenses)
+/export_today - Excel export (today)
+/export_weekly - Excel export (last 7 days)
+/export_monthly - Excel export (last 30 days)
+/export_csv - CSV format export
+/pdf - PDF export (coming soon)
+/graph - Graph visualization (coming soon)
+
+*MANAGE DATA:*
+/categories - Show all categories
+/delete - Delete last expense
+/list - Show last 10 expenses
+
+*HOW TO ADD EXPENSES:*
+Send natural language messages:
 • "Spent 150 for biriyani"
-• "Transport - 50"
-• "250 on movie"
+• "50 on transport"
+• "200 for movie"
 
-📸 **Receipt Processing:**
-Send a photo of your receipt and I'll extract amount and category automatically.
+*PHOTO RECEIPTS:*
+Send a photo of your receipt to auto-extract amount and category
 
-🎤 **Voice Bills:**
-Send a voice message describing your bill/expense. I'll transcribe and record it automatically.
+*VOICE MESSAGES:*
+Send voice message describing expense - I'll transcribe and record it
 
-💳 **Online Payment Tracking:**
-Upload a screenshot of online payment/transaction. Include caption with:
-• TXID: [transaction_id]
-• Account: [account_name]
+*ONLINE PAYMENTS:*
+Send payment screenshot with caption:
+TXID: xyz123
+Account: MyBank
 
-I'll track transaction ID, account name, and amount separately.
-
-💾 **Categories:**
+*CATEGORIES:*
 {', '.join(EXPENSE_CATEGORIES)}
 
-Use /summary to see your spending patterns!
+Use /limits to monitor your budget usage!
     """
     
-    await update.message.reply_text(help_text)
+    await update.message.reply_text(help_text, parse_mode='Markdown')
 
 async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE, days: int = 30) -> None:
     """Show expense summary"""
@@ -303,3 +319,183 @@ async def export_today_data(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text("✅ Today's report exported successfully!")
     except Exception as e:
         await update.message.reply_text(f"❌ Error generating report: {str(e)}")
+
+# ===== BUDGET LIMIT COMMANDS =====
+
+async def set_daily_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Set daily budget limit"""
+    user_id = update.effective_user.id
+    
+    if not context.args:
+        await update.message.reply_text("❌ Usage: /setdaily <amount>\nExample: `/setdaily 500`", parse_mode='Markdown')
+        return
+    
+    try:
+        amount = float(context.args[0])
+        db.set_budget_limit(user_id, 'daily', amount)
+        await update.message.reply_text(f"✅ Daily limit set to {CURRENCY}{amount:.2f}")
+    except ValueError:
+        await update.message.reply_text("❌ Invalid amount. Please enter a number.")
+
+async def set_weekly_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Set weekly budget limit"""
+    user_id = update.effective_user.id
+    
+    if not context.args:
+        await update.message.reply_text("❌ Usage: /setweekly <amount>\nExample: `/setweekly 3500`", parse_mode='Markdown')
+        return
+    
+    try:
+        amount = float(context.args[0])
+        db.set_budget_limit(user_id, 'weekly', amount)
+        await update.message.reply_text(f"✅ Weekly limit set to {CURRENCY}{amount:.2f}")
+    except ValueError:
+        await update.message.reply_text("❌ Invalid amount. Please enter a number.")
+
+async def set_monthly_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Set monthly budget limit"""
+    user_id = update.effective_user.id
+    
+    if not context.args:
+        await update.message.reply_text("❌ Usage: /setmonthly <amount>\nExample: `/setmonthly 15000`", parse_mode='Markdown')
+        return
+    
+    try:
+        amount = float(context.args[0])
+        db.set_budget_limit(user_id, 'monthly', amount)
+        await update.message.reply_text(f"✅ Monthly limit set to {CURRENCY}{amount:.2f}")
+    except ValueError:
+        await update.message.reply_text("❌ Invalid amount. Please enter a number.")
+
+def get_limit_status(current, limit):
+    """Get budget warning status"""
+    if not limit:
+        return None
+    
+    percentage = (current / limit) * 100
+    
+    if percentage >= 100:
+        return "🔴", percentage
+    elif percentage >= 90:
+        return "⚠️", percentage
+    elif percentage >= 75:
+        return "⚡", percentage
+    else:
+        return "✅", percentage
+
+async def check_limits(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Check budget status"""
+    user_id = update.effective_user.id
+    
+    daily_limit, weekly_limit, monthly_limit = db.get_budget_limits(user_id)
+    
+    if not any([daily_limit, weekly_limit, monthly_limit]):
+        await update.message.reply_text(
+            "❌ No limits set.\n\nSet limits using:\n"
+            "/setdaily <amount>\n"
+            "/setweekly <amount>\n"
+            "/setmonthly <amount>",
+            parse_mode='Markdown'
+        )
+        return
+    
+    today_total = db.get_total_today(user_id)
+    week_total = db.get_total_week(user_id)
+    month_total = db.get_total_month(user_id)
+    
+    limits_text = "💰 **Budget Status**\n\n"
+    
+    if daily_limit:
+        status, percentage = get_limit_status(today_total, daily_limit)
+        limits_text += f"{status} **Daily:** {CURRENCY}{today_total:.2f} / {CURRENCY}{daily_limit:.2f} ({percentage:.0f}%)\n"
+    
+    if weekly_limit:
+        status, percentage = get_limit_status(week_total, weekly_limit)
+        limits_text += f"{status} **Weekly:** {CURRENCY}{week_total:.2f} / {CURRENCY}{weekly_limit:.2f} ({percentage:.0f}%)\n"
+    
+    if monthly_limit:
+        status, percentage = get_limit_status(month_total, monthly_limit)
+        limits_text += f"{status} **Monthly:** {CURRENCY}{month_total:.2f} / {CURRENCY}{monthly_limit:.2f} ({percentage:.0f}%)\n"
+    
+    await update.message.reply_text(limits_text, parse_mode='Markdown')
+
+async def report_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show weekly report"""
+    user_id = update.effective_user.id
+    expenses = db.get_summary(user_id, 7)
+    
+    if not expenses:
+        await update.message.reply_text("No expenses found for this week.")
+        return
+    
+    report_text = "📊 **Weekly Report (Last 7 Days)**\n\n"
+    total = 0
+    
+    for category, amount, count in expenses:
+        report_text += f"🏷️ {category}: {CURRENCY}{amount:.2f} ({count} items)\n"
+        total += amount
+    
+    report_text += f"\n💰 **Total: {CURRENCY}{total:.2f}**"
+    
+    await update.message.reply_text(report_text, parse_mode='Markdown')
+
+async def report_month(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show monthly report"""
+    user_id = update.effective_user.id
+    expenses = db.get_summary(user_id, 30)
+    
+    if not expenses:
+        await update.message.reply_text("No expenses found for this month.")
+        return
+    
+    report_text = "📊 **Monthly Report (Last 30 Days)**\n\n"
+    total = 0
+    
+    for category, amount, count in expenses:
+        report_text += f"🏷️ {category}: {CURRENCY}{amount:.2f} ({count} items)\n"
+        total += amount
+    
+    report_text += f"\n💰 **Total: {CURRENCY}{total:.2f}**"
+    
+    await update.message.reply_text(report_text, parse_mode='Markdown')
+
+async def export_csv(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Export all expenses as CSV"""
+    user_id = update.effective_user.id
+    expenses = db.get_expenses(user_id)
+    
+    if not expenses:
+        await update.message.reply_text("No expenses to export.")
+        return
+    
+    # Create CSV content
+    csv_content = "Date,Category,Amount,Description\n"
+    for exp_id, amount, category, description, date in expenses:
+        csv_content += f'"{date}","{category}","{amount}","{description}"\n'
+    
+    # Save to file
+    filename = f"expenses_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    with open(filename, 'w') as f:
+        f.write(csv_content)
+    
+    # Send file
+    with open(filename, 'rb') as csv_file:
+        await update.message.reply_document(
+            document=csv_file,
+            caption="📊 Expenses CSV Export",
+            filename=filename
+        )
+    
+    # Clean up
+    if os.path.exists(filename):
+        os.remove(filename)
+    
+    await update.message.reply_text("✅ CSV exported successfully!")
+
+async def export_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Placeholder for PDF export"""
+    await update.message.reply_text("📄 PDF export coming soon! Use /export_monthly for Excel format.")
+
+async def export_graph(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Placeholder for graph export"""
+    await update.message.reply_text("📈 Graph export coming soon! Use /stats to see text-based statistics.")
